@@ -6,14 +6,17 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"strconv"
 )
 
 type GeoResponse struct {
 	Results []struct {
-		Name      string  `json:"name"`
-		Latitude  float64 `json:"latitude"`
-		Longitude float64 `json:"longitude"`
-		Country   string  `json:"country"`
+		Name        string  `json:"name"`
+		Latitude    float64 `json:"latitude"`
+		Longitude   float64 `json:"longitude"`
+		Country     string  `json:"country"`
+		CountryCode string  `json:"country_code"`
+		Admin1      string  `json:"admin1"`
 	} `json:"results"`
 }
 
@@ -25,9 +28,19 @@ type OpenMeteoResponse struct {
 		WeatherCode   int     `json:"weathercode"` // Código numérico del estado (ej: 0 = despejado)
 		Time          string  `json:"time"`
 	} `json:"current_weather"`
+	CurrentUnits struct {
+		Temperature string `json:"temperature"` // Aquí verás "°C"
+	} `json:"current_weather_units"`
+	Hourly struct {
+		Time          []string  `json:"time"`
+		Temperature2m []float64 `json:"temperature_2m"`
+	} `json:"hourly"`
+	HourlyUnits struct {
+		Temperature2m string `json:"temperature_2m"` // Aquí también verás "°C"
+	} `json:"hourly_units"`
 }
 
-func ConsumirApi(Ciudad string) (*OpenMeteoResponse, error) {
+func ConsumirApi(Ciudad string, horas int) (*OpenMeteoResponse, error) {
 
 	lat, lon, foundName, err := getCoordinates(Ciudad)
 
@@ -35,8 +48,16 @@ func ConsumirApi(Ciudad string) (*OpenMeteoResponse, error) {
 		log.Fatal("Error buscando ciudad:", err)
 	}
 	fmt.Printf("📍 Ciudad encontrada: %s (Lat: %.2f, Lon: %.2f)\n", foundName, lat, lon)
+	fmt.Printf("🌐 Horas solicitadas: %d\n", horas)
 
+	//url := fmt.Sprintf("https://api.open-meteo.com/v1/forecast?latitude=%f&longitude=%f&current_weather=true&temperature_unit=celsius", lat, lon)
+	//url := fmt.Sprintf("https://api.open-meteo.com/v1/forecast?latitude=%f&longitude=%f&current_weather=true&temperature_unit=celsius", lat, lon)
 	url := fmt.Sprintf("https://api.open-meteo.com/v1/forecast?latitude=%f&longitude=%f&current_weather=true", lat, lon)
+	if horas > 0 {
+		// Agregamos el parámetro para obtener temperaturas por hora
+		url += "&hourly=temperature_2m"
+	}
+
 	resp, err := http.Get(url)
 	if err != nil {
 		log.Fatal("Error al hacer la solicitud:", err)
@@ -45,6 +66,22 @@ func ConsumirApi(Ciudad string) (*OpenMeteoResponse, error) {
 	var weatherResp OpenMeteoResponse
 	if err := json.NewDecoder(resp.Body).Decode(&weatherResp); err != nil {
 		return nil, err
+	}
+	fmt.Printf("🌡️ Unidad de temperatura: %s\n", weatherResp.CurrentUnits.Temperature)
+	fmt.Printf("🌡️ Temperatura actual: %.1f%s\n",
+		weatherResp.CurrentWeather.Temperature,
+		weatherResp.CurrentUnits.Temperature)
+	if horas > 0 && len(weatherResp.Hourly.Time) > 0 {
+		// Si el usuario pide más horas de las que trae un día (24),
+		// limitamos al máximo disponible para evitar errores.
+		maxHoras := len(weatherResp.Hourly.Time)
+		if horas > maxHoras {
+			horas = maxHoras
+		}
+
+		// "Recortamos" los arrays para que solo tengan N elementos
+		weatherResp.Hourly.Time = weatherResp.Hourly.Time[:horas]
+		weatherResp.Hourly.Temperature2m = weatherResp.Hourly.Temperature2m[:horas]
 	}
 
 	return &weatherResp, nil
@@ -75,12 +112,24 @@ func getCoordinates(ciudad string) (float64, float64, string, error) {
 
 func Serverwheather(w http.ResponseWriter, r *http.Request) {
 	ciudad := r.URL.Query().Get("ciudad")
+	horasStr := r.URL.Query().Get("horas")
 	if ciudad == "" {
 		http.Error(w, "Debe enviar el parámetro ?ciudad=", http.StatusBadRequest)
 		return
 	}
 
-	weatherData, err := ConsumirApi(ciudad)
+	var horas int
+	var err error
+
+	if horasStr != "" {
+		horas, err = strconv.Atoi(horasStr) // Convierte string a int
+		if err != nil {
+			http.Error(w, "El parámetro 'horas' debe ser un número válido", http.StatusBadRequest)
+			return
+		}
+	}
+
+	weatherData, err := ConsumirApi(ciudad, horas)
 
 	if err != nil {
 		http.Error(w, "No se pudo obtener el clima: "+err.Error(), http.StatusInternalServerError)
