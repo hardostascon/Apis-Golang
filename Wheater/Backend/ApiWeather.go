@@ -10,6 +10,23 @@ import (
 	"strings"
 )
 
+func enableCORS(w http.ResponseWriter, r *http.Request) {
+	// Permitir todos los orígenes (para desarrollo)
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+
+	// Métodos HTTP permitidos
+	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+
+	// Headers permitidos
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
+
+	// Permitir credenciales
+	w.Header().Set("Access-Control-Allow-Credentials", "true")
+
+	// Tiempo de cache para preflight
+	w.Header().Set("Access-Control-Max-Age", "3600")
+}
+
 type GeoResponse struct {
 	Results []struct {
 		Name        string  `json:"name"`
@@ -125,6 +142,12 @@ func getCoordinates(ciudad string, pais string) (float64, float64, string, error
 }
 
 func Serverwheather(w http.ResponseWriter, r *http.Request) {
+
+	enableCORS(w, r)
+	if r.Method == "OPTIONS" {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
 	ciudad := r.URL.Query().Get("ciudad")
 	horasStr := r.URL.Query().Get("horas")
 	pais := r.URL.Query().Get("pais")
