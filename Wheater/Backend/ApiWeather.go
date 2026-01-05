@@ -81,12 +81,12 @@ func ConsumirApi(ciudad, pais string, horas int) (*OpenMeteoResponse, error) {
 		"https://api.open-meteo.com/v1/forecast?latitude=%.5f&longitude=%.5f"+
 			"&current=temperature_2m,wind_speed_10m,relative_humidity_2m,visibility,weather_code"+
 			"&current_units=true"+
-			"&timezone=America/Bogota",
+			"&timezone=America/Bogota&models=gfs_global",
 		lat, lon,
 	)
 
 	if horas > 0 {
-		url += "&hourly=temperature_2m,wind_speed_10m,relative_humidity_2m"
+		url += "&hourly=temperature_2m,wind_speed_10m,relative_humidity_2m&models=gfs_global"
 	}
 
 	resp, err := http.Get(url)
