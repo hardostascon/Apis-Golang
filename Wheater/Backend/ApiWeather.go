@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 )
 
 /*
@@ -64,6 +65,53 @@ type OpenMeteoResponse struct {
 	} `json:"hourly"`
 }
 
+type HourTemperature struct {
+	Time        string  `json:"time"`
+	Temperature float64 `json:"temperature"`
+}
+
+type DailyHourlyTemperature struct {
+	Date  string            `json:"date"`
+	Hours []HourTemperature `json:"hours"`
+}
+
+type WeatherResponse struct {
+	Latitude   float64                  `json:"latitude"`
+	Longitude  float64                  `json:"longitude"`
+	Current    interface{}              `json:"current"`
+	DailyHours []DailyHourlyTemperature `json:"daily_hours,omitempty"`
+}
+
+func groupHourlyByDay(times []string, temps []float64) []DailyHourlyTemperature {
+
+	dailyMap := make(map[string][]HourTemperature)
+
+	for i := range times {
+		t, err := time.Parse("2006-01-02T15:04", times[i])
+		if err != nil {
+			continue
+		}
+
+		date := t.Format("2006-01-02")
+		hour := t.Format("15:04")
+
+		dailyMap[date] = append(dailyMap[date], HourTemperature{
+			Time:        hour,
+			Temperature: temps[i],
+		})
+	}
+
+	var result []DailyHourlyTemperature
+	for date, hours := range dailyMap {
+		result = append(result, DailyHourlyTemperature{
+			Date:  date,
+			Hours: hours,
+		})
+	}
+
+	return result
+}
+
 /*
 	=========================
 	  CONSUMIR API
@@ -86,9 +134,9 @@ func ConsumirApi(ciudad, pais string, horas int) (*OpenMeteoResponse, error) {
 	)
 
 	if horas > 0 {
-		url += "&hourly=temperature_2m,wind_speed_10m,relative_humidity_2m&models=gfs_global"
+		url += "&hourly=temperature_2m,wind_speed_10m,relative_humidity_2m"
 	}
-
+	fmt.Println("URL API:", url)
 	resp, err := http.Get(url)
 	if err != nil {
 		return nil, err
@@ -116,6 +164,21 @@ func ConsumirApi(ciudad, pais string, horas int) (*OpenMeteoResponse, error) {
 		data.Hourly.Windspeed10m = data.Hourly.Windspeed10m[:horas]
 		data.Hourly.RelativeHumidity2m = data.Hourly.RelativeHumidity2m[:horas]
 	}
+
+	response := WeatherResponse{
+		Latitude:  data.Latitude,
+		Longitude: data.Longitude,
+		Current:   data.Current,
+	}
+
+	if len(data.Hourly.Time) > 0 {
+		response.DailyHours = groupHourlyByDay(
+			data.Hourly.Time,
+			data.Hourly.Temperature2m,
+		)
+	}
+
+	fmt.Println("Respuesta procesada:", response)
 
 	return &data, nil
 }
